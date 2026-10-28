@@ -23,6 +23,8 @@ Lista *criarLista(void);
 void inserirNoFim(Lista *lista, const char *nome, int poder);
 void removerNo(Lista *lista, No *no);
 No *buscarPorNome(Lista *lista, const char *nome);
+No *buscarPorPosicao(Lista *lista, int posicao);
+void trocarConteudo(No *a, No *b);
 int contarNos(Lista *lista);
 void mergeSortLista(Lista *lista);
 void imprimirLista(Lista *lista);

@@ -83,13 +83,16 @@ static void desenharTextoCentralizado(const char *texto, int y, int tamanho, Col
     DrawText(texto, (GetScreenWidth() - largura) / 2, y, tamanho, cor);
 }
 
-static void desenharBotao(Rectangle area, const char *texto) {
-    bool mouseEmCima = CheckCollisionPointRec(GetMousePosition(), area);
-    DrawRectangleRec(area, mouseEmCima ? DARKGREEN : DARKGRAY);
-    DrawRectangleLinesEx(area, 3, WHITE);
+/* Botão desativado fica apagado e não reage ao mouse. */
+static void desenharBotao(Rectangle area, const char *texto, bool ativo) {
+    bool mouseEmCima = ativo && CheckCollisionPointRec(GetMousePosition(), area);
+    Color fundo = !ativo ? Fade(DARKGRAY, 0.5f) : (mouseEmCima ? DARKGREEN : DARKGRAY);
+    Color letra = ativo ? WHITE : GRAY;
+    DrawRectangleRec(area, fundo);
+    DrawRectangleLinesEx(area, 3, letra);
     int largura = MeasureText(texto, 28);
     DrawText(texto, (int)(area.x + (area.width - largura) / 2),
-             (int)(area.y + (area.height - 28) / 2), 28, WHITE);
+             (int)(area.y + (area.height - 28) / 2), 28, letra);
 }
 
 /* ------------------------------------------------------------------
@@ -100,7 +103,7 @@ void desenharMenu(const Recursos *r) {
     desenharFundo(r->cenarioBatalha);
     desenharTextoCentralizado("DESTINO", 150, 90, GREEN);
     desenharTextoCentralizado("O Duelo do Tempo", 260, 40, RAYWHITE);
-    desenharBotao(BOTAO_JOGAR, "Jogar");
+    desenharBotao(BOTAO_JOGAR, "Jogar", true);
 }
 
 void desenharHistoria(const Recursos *r, int capitulo) {
@@ -115,11 +118,185 @@ void desenharHistoria(const Recursos *r, int capitulo) {
     desenharTextoCentralizado("Clique ou aperte ENTER para continuar", 600, 22, GRAY);
 }
 
+/* ------------------------------------------------------------------
+ * Fase 1
+ * ------------------------------------------------------------------ */
+
+#define COR_SENTINELA       LIME
+#define COR_HEROI           (Color){ 60, 140, 255, 255 }
+#define COR_NUCLEO          (Color){ 255, 200, 40, 255 }
+#define PODER_MAXIMO_BARRA  125
+#define QUADROS_ATAQUE      4       /* as imagens de ataque têm 4 quadros lado a lado */
+
+/* Barra horizontal de poder acima do sprite, com o número em cima da barra. */
+static void desenharBarraPoder(Rectangle sprite, int poder, Color cor) {
+    int largura = 150, altura = 14;
+    int x = (int)(sprite.x + (sprite.width - largura) / 2);
+    int y = (int)sprite.y - 22;
+    float proporcao = (float) poder / PODER_MAXIMO_BARRA;
+    if (proporcao > 1.0f) proporcao = 1.0f;
+
+    DrawRectangle(x, y, largura, altura, Fade(BLACK, 0.6f));
+    DrawRectangle(x, y, (int)(largura * proporcao), altura, cor);
+    DrawRectangleLines(x, y, largura, altura, WHITE);
+
+    const char *numero = TextFormat("%d", poder);
+    DrawText(numero, (int)(sprite.x + (sprite.width - MeasureText(numero, 22)) / 2), y - 26, 22, WHITE);
+}
+
+/* Personagem parado, ou atacando: a tira de ataque toca uma vez durante o golpe. */
+static void desenharPersonagem(Texture2D parado, Texture2D ataque, bool atacando,
+                               float tempo, Rectangle destino, Color tinta) {
+    Rectangle origem = { 0, 0, (float) parado.width, (float) parado.height };
+    Texture2D textura = parado;
+
+    if (atacando) {
+        float larguraQuadro = (float) ataque.width / QUADROS_ATAQUE;
+        int quadro = (int)(tempo / DURACAO_ATAQUE * QUADROS_ATAQUE);
+        if (quadro >= QUADROS_ATAQUE) quadro = QUADROS_ATAQUE - 1;
+        origem = (Rectangle){ quadro * larguraQuadro, 0, larguraQuadro, (float) ataque.height };
+        textura = ataque;
+    }
+    DrawTexturePro(textura, origem, destino, (Vector2){ 0, 0 }, 0.0f, tinta);
+}
+
+/* Uma linha da batalha: Sentinela à esquerda e herói à direita. */
+static void desenharLinhaDuelo(const Recursos *r, int i, const char *nomeSentinela,
+                               int poderSentinela, int poderHeroi, bool atacando, float tempo,
+                               Color tintaSentinela, Color tintaHeroi) {
+    Rectangle sentinela = spriteSentinela(i);
+    Rectangle heroi = spriteHeroi(i);
+
+    desenharPersonagem(r->sentinela, r->sentinelaAtaque, atacando, tempo, sentinela, tintaSentinela);
+    desenharBarraPoder(sentinela, poderSentinela, COR_SENTINELA);
+    DrawText(nomeSentinela, 40, (int)sentinela.y + 45, 20, tintaSentinela);
+
+    desenharPersonagem(r->heroi[i], r->heroiAtaque[i], atacando, tempo, heroi, tintaHeroi);
+    desenharBarraPoder(heroi, poderHeroi, COR_HEROI);
+    DrawText(TextFormat("Heroi %d", i + 1), 1070, (int)heroi.y + 45, 20, tintaHeroi);
+}
+
+static void desenharTextoMeio(int i, const char *texto, int tamanho, Color cor) {
+    int y = (int)spriteSentinela(i).y + 55 - tamanho / 2;
+    DrawText(texto, (GetScreenWidth() - MeasureText(texto, tamanho)) / 2, y, tamanho, cor);
+}
+
+static const char *instrucaoFase1(const Fase1 *fase) {
+    switch (fase->etapa) {
+        case ETAPA_DUELOS:
+            return TextFormat("Duelo %d de %d", fase->dueloAtual + 1, QTD_DUELOS);
+        case ETAPA_RESULTADO:
+            return "";
+        case ETAPA_PREPARACAO:
+            break;
+    }
+    if (fase->nucleoSelecionado != -1) {
+        return TextFormat("Clique no Sentinela que vai receber o nucleo +%d",
+                          fase->nucleos[fase->nucleoSelecionado]);
+    }
+    if (fase->sentinelaSelecionado != -1) {
+        return "Clique em outro Sentinela para trocar de posicao (ou no mesmo para cancelar)";
+    }
+    if (!podeIniciarDuelos(fase)) {
+        return "Clique num nucleo e depois no Sentinela que vai recebe-lo. Clique em dois Sentinelas para troca-los.";
+    }
+    return "Tudo pronto? Clique em Iniciar duelos.";
+}
+
+static void desenharPreparacao(const Fase1 *fase, const Recursos *r) {
+    Vector2 mouse = GetMousePosition();
+    No *sentinela = fase->sentinelas->inicio;
+    No *heroi = fase->herois->inicio;
+
+    for (int i = 0; i < QTD_DUELOS; i++) {
+        desenharLinhaDuelo(r, i, sentinela->nome, sentinela->poder, heroi->poder,
+                           false, 0.0f, WHITE, WHITE);
+        desenharTextoMeio(i, "VS", 30, LIGHTGRAY);
+
+        /* destaque: Sentinela escolhido para troca ou sob o mouse */
+        Rectangle area = areaSentinela(i);
+        if (fase->sentinelaSelecionado == i) {
+            DrawRectangleLinesEx(area, 3, GOLD);
+        } else if (CheckCollisionPointRec(mouse, area)) {
+            DrawRectangleLinesEx(area, 2, Fade(WHITE, 0.5f));
+        }
+
+        sentinela = sentinela->prox;
+        heroi = heroi->prox;
+    }
+
+    DrawText("Nucleos de energia", 50, 595, 18, WHITE);
+    for (int i = 0; i < QTD_NUCLEOS; i++) {
+        Rectangle area = areaNucleo(i);
+        Vector2 centro = { area.x + area.width / 2, area.y + area.height / 2 };
+        const char *texto = TextFormat("+%d", fase->nucleos[i]);
+        int x = (int)centro.x - MeasureText(texto, 26) / 2;
+
+        if (fase->nucleoUsado[i]) {
+            DrawCircleV(centro, 36, Fade(GRAY, 0.4f));
+            DrawText(texto, x, (int)centro.y - 13, 26, GRAY);
+        } else {
+            DrawCircleV(centro, 36, COR_NUCLEO);
+            if (fase->nucleoSelecionado == i) DrawRing(centro, 38, 44, 0, 360, 36, WHITE);
+            DrawText(texto, x, (int)centro.y - 13, 26, BLACK);
+        }
+    }
+
+    desenharBotao(BOTAO_INICIAR_DUELOS, "Iniciar duelos", podeIniciarDuelos(fase));
+}
+
+static void desenharDuelos(const Fase1 *fase, const Recursos *r) {
+    for (int i = 0; i < QTD_DUELOS; i++) {
+        const Duelo *duelo = &fase->duelos[i];
+        bool atacando = fase->etapa == ETAPA_DUELOS && i == fase->dueloAtual && !duelo->resolvido;
+
+        /* quem perdeu fica apagado */
+        Color tintaSentinela = (duelo->resolvido && !duelo->sentinelaVenceu) ? Fade(WHITE, 0.3f) : WHITE;
+        Color tintaHeroi = (duelo->resolvido && duelo->sentinelaVenceu) ? Fade(WHITE, 0.3f) : WHITE;
+
+        desenharLinhaDuelo(r, i, duelo->nomeSentinela, duelo->poderSentinela, duelo->poderHeroi,
+                           atacando, fase->tempoDuelo, tintaSentinela, tintaHeroi);
+
+        if (duelo->resolvido) {
+            desenharTextoMeio(i, duelo->sentinelaVenceu ? "VITORIA" : "DERROTA", 34,
+                              duelo->sentinelaVenceu ? LIME : RED);
+        } else {
+            desenharTextoMeio(i, "VS", atacando ? 40 : 30, atacando ? GOLD : LIGHTGRAY);
+        }
+    }
+}
+
+static void desenharResultadoFase1(const Fase1 *fase) {
+    bool avancou = fase->vitorias >= 2;
+    Rectangle painel = { 340, 250, 600, 220 };
+    DrawRectangleRec(painel, Fade(BLACK, 0.85f));
+    DrawRectangleLinesEx(painel, 3, avancou ? LIME : RED);
+
+    desenharTextoCentralizado(TextFormat("Duelos vencidos: %d de %d", fase->vitorias, QTD_DUELOS),
+                              285, 36, WHITE);
+    if (avancou) {
+        desenharTextoCentralizado("Destino segue para o universo do Loki!", 345, 26, LIME);
+    } else {
+        desenharTextoCentralizado("Os herois venceram. Destino fica sem protecao...", 345, 26, RED);
+    }
+    desenharTextoCentralizado("Clique ou aperte ENTER para continuar", 420, 20, GRAY);
+}
+
 void desenharFase1(const Fase1 *fase, const Recursos *r) {
     desenharFundo(r->cenarioBatalha);
-    DrawText("FASE 1", 20, 20, 30, WHITE);
-    DrawText(TextFormat("Sentinelas: %d", contarNos(fase->sentinelas)), 20, 60, 24, WHITE);
-    DrawText("(provisorio) R = perder Sentinela   ENTER = terminar fase", 20, 680, 20, YELLOW);
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.35f));
+
+    DrawText("FASE 1 - O EXERCITO DO DESTINO", 20, 15, 28, WHITE);
+    DrawText(instrucaoFase1(fase), 20, 52, 20, GOLD);
+
+    if (fase->etapa == ETAPA_PREPARACAO) {
+        const char *trocas = TextFormat("Trocas restantes: %d", fase->trocasRestantes);
+        DrawText(trocas, GetScreenWidth() - MeasureText(trocas, 24) - 20, 18, 24, WHITE);
+        desenharPreparacao(fase, r);
+    } else {
+        desenharDuelos(fase, r);
+        if (fase->etapa == ETAPA_RESULTADO) desenharResultadoFase1(fase);
+    }
 }
 
 void desenharFase2(const Fase2 *fase, const Recursos *r) {
@@ -133,10 +310,10 @@ void desenharFase2(const Fase2 *fase, const Recursos *r) {
 
 void desenharVitoria(const Recursos *r) {
     desenharFundo(r->telaVitoria);
-    desenharBotao(BOTAO_VOLTAR_MENU, "Menu");
+    desenharBotao(BOTAO_VOLTAR_MENU, "Menu", true);
 }
 
 void desenharDerrota(const Recursos *r) {
     desenharFundo(r->telaDerrota);
-    desenharBotao(BOTAO_VOLTAR_MENU, "Menu");
+    desenharBotao(BOTAO_VOLTAR_MENU, "Menu", true);
 }

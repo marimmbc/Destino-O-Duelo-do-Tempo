@@ -83,6 +83,33 @@ No *buscarPorNome(Lista *lista, const char *nome) {
     return NULL;
 }
 
+/* Retorna o nó na posição pedida (0 = primeiro). NULL se não existir. */
+No *buscarPorPosicao(Lista *lista, int posicao) {
+    if (lista == NULL || posicao < 0) return NULL;
+
+    No *atual = lista->inicio;
+    for (int i = 0; i < posicao && atual != NULL; i++) {
+        atual = atual->prox;
+    }
+    return atual;
+}
+
+/* Troca dois personagens de lugar na lista.
+ * Em vez de religar os ponteiros, troca o conteúdo (nome e poder) dos nós:
+ * o resultado é o mesmo e não há risco de quebrar o encadeamento. */
+void trocarConteudo(No *a, No *b) {
+    if (a == NULL || b == NULL || a == b) return;
+
+    char nomeTemp[sizeof(a->nome)];
+    strcpy(nomeTemp, a->nome);
+    strcpy(a->nome, b->nome);
+    strcpy(b->nome, nomeTemp);
+
+    int poderTemp = a->poder;
+    a->poder = b->poder;
+    b->poder = poderTemp;
+}
+
 /* Conta quantos nós existem percorrendo a lista.
  * Ao fim da Fase 1, indica quantos Sentinelas sobraram (vidas da Fase 2). */
 int contarNos(Lista *lista) {
