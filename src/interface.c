@@ -1,4 +1,6 @@
+#include <stddef.h>
 #include "interface.h"
+#include "ranking.h"
 
 /*
  * Carregamento das imagens + desenhos PROVISÓRIOS das telas.
@@ -104,6 +106,70 @@ void desenharMenu(const Recursos *r) {
     desenharTextoCentralizado("DESTINO", 150, 90, GREEN);
     desenharTextoCentralizado("O Duelo do Tempo", 260, 40, RAYWHITE);
     desenharBotao(BOTAO_JOGAR, "Jogar", true);
+    desenharBotao(BOTAO_RANKING, "Ranking", true);
+}
+
+void desenharEntradaNome(const Recursos *r, const char *nome) {
+    desenharFundo(r->cenarioBatalha);
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.5f));
+
+    desenharTextoCentralizado("Qual e o seu nome?", 200, 44, RAYWHITE);
+
+    Rectangle caixa = { 390, 290, 500, 70 };
+    DrawRectangleRec(caixa, Fade(BLACK, 0.7f));
+    DrawRectangleLinesEx(caixa, 3, GOLD);
+    DrawText(nome, (int)caixa.x + 20, (int)caixa.y + 17, 36, WHITE);
+
+    /* cursor piscando depois da última letra */
+    if ((int)(GetTime() * 2) % 2 == 0) {
+        DrawText("_", (int)caixa.x + 24 + MeasureText(nome, 36), (int)caixa.y + 17, 36, GOLD);
+    }
+
+    desenharTextoCentralizado("Digite seu nome e aperte ENTER para comecar", 390, 22, LIGHTGRAY);
+}
+
+/* Cores das 3 primeiras colocações: ouro, prata e bronze. */
+static Color corDaColocacao(int colocacao) {
+    switch (colocacao) {
+        case 1:  return GOLD;
+        case 2:  return (Color){ 200, 200, 210, 255 };
+        case 3:  return (Color){ 205, 127, 50, 255 };
+        default: return WHITE;
+    }
+}
+
+void desenharRanking(const Recursos *r, const Lista *ranking) {
+    desenharFundo(r->cenarioBatalha);
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.6f));
+    desenharTextoCentralizado("RANKING", 35, 60, GOLD);
+
+    if (ranking == NULL || ranking->inicio == NULL) {
+        desenharTextoCentralizado("Ninguem jogou ainda. Seja o primeiro!", 300, 30, RAYWHITE);
+    } else {
+        desenharTextoCentralizado(TextFormat("Partidas jogadas: %d", ranking->tamanho), 105, 22, LIGHTGRAY);
+
+        Rectangle tabela = { 330, 140, 620, 440 };
+        DrawRectangleRec(tabela, Fade(BLACK, 0.5f));
+        DrawRectangleLinesEx(tabela, 2, Fade(GOLD, 0.6f));
+
+        DrawText("POS", 360, 155, 22, GRAY);
+        DrawText("JOGADOR", 460, 155, 22, GRAY);
+        DrawText("PONTOS", 920 - MeasureText("PONTOS", 22), 155, 22, GRAY);
+
+        No *atual = ranking->inicio;
+        for (int colocacao = 1; colocacao <= QTD_COLOCACOES && atual != NULL; colocacao++) {
+            int y = 150 + colocacao * 40;
+            Color cor = corDaColocacao(colocacao);
+            const char *pontos = TextFormat("%d", atual->poder);
+
+            DrawText(TextFormat("%d.", colocacao), 360, y, 26, cor);
+            DrawText(atual->nome, 460, y, 26, cor);
+            DrawText(pontos, 920 - MeasureText(pontos, 26), y, 26, cor);
+            atual = atual->prox;
+        }
+    }
+
+    desenharBotao(BOTAO_VOLTAR_MENU, "Voltar", true);
 }
 
 void desenharHistoria(const Recursos *r, int capitulo) {
@@ -308,12 +374,20 @@ void desenharFase2(const Fase2 *fase, const Recursos *r) {
     DrawText("(provisorio) A = empilhar ataque   ESPACO = resolver   D = perder vida", 20, 680, 20, YELLOW);
 }
 
-void desenharVitoria(const Recursos *r) {
+/* Faixa com o nome e os pontos da partida, nas telas finais. */
+static void desenharPontuacaoFinal(const char *nome, int pontos) {
+    DrawRectangle(0, 520, GetScreenWidth(), 60, Fade(BLACK, 0.6f));
+    desenharTextoCentralizado(TextFormat("%s: %d pontos", nome, pontos), 535, 32, GOLD);
+}
+
+void desenharVitoria(const Recursos *r, const char *nome, int pontos) {
     desenharFundo(r->telaVitoria);
+    desenharPontuacaoFinal(nome, pontos);
     desenharBotao(BOTAO_VOLTAR_MENU, "Menu", true);
 }
 
-void desenharDerrota(const Recursos *r) {
+void desenharDerrota(const Recursos *r, const char *nome, int pontos) {
     desenharFundo(r->telaDerrota);
+    desenharPontuacaoFinal(nome, pontos);
     desenharBotao(BOTAO_VOLTAR_MENU, "Menu", true);
 }
